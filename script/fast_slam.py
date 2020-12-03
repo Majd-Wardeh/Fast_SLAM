@@ -17,7 +17,7 @@ import numpy as np
 from numpy import pi, abs
 import numpy.linalg as la
 import math
-from math import cos, sin, sqrt, atan2
+from math import cos, sin, sqrt, atan2, exp
 import matplotlib
 matplotlib.use('TkAgg')
 from matplotlib import pyplot as plt
@@ -48,7 +48,7 @@ class GridMap:
 
 class Robot:
 
-    def __init__(self, N, alphas = [0.3, 0.08, 0.08, 0.3], alpha=0.3, beta=0.0066):
+    def __init__(self, N, alphas = [0.3, 0.08, 0.08, 0.3], alpha=0.3, beta=0.0066, Phit_mean=, Phit_segma=):
         self.N = N
         self.alphas = alphas
         self.firstOdometry = True
@@ -58,6 +58,24 @@ class Robot:
         self.sensorBeta = beta
         self.gmap = GridMap()
 
+        self.Zmin = 0
+        self.Phit_semga = 
+
+
+    def calc_Phit(self, Ztk):
+        if Ztk < self.Zmin or Ztk > self.Zmax:
+            return 0
+        P = (1/sqrt(2*pi*self.Phit_segma^2)) * exp(-0.5*(Ztk-self.Phit_mean)^2/Phit_segma^2)
+        normalizer = 1
+        return normalizer * P
+    def calc_Pmax(self, Ztk):
+        return int(Ztk == self.Zmax)
+    def calc_Pshort(Ztk, Zstar, lambda_short):
+        if Ztk < self.Zmin or Ztk > self.Zstar:
+            return 0
+        n = 1/(1-exp(-self.lambda_short * self.Zstar))
+        return n * self.lambda_short * exp(-self.lambda_short*Ztk)
+        
     def odometryCallback(self, msg):
         self.currOdom = self.getOdomPose(msg)
         if self.firstOdometry:
@@ -187,6 +205,8 @@ class Robot:
             if(i>210 or j>210):
                 continue
             self.gmap.map[i, j, 1] = 255 
+
+
 
 def main():
 
