@@ -377,7 +377,7 @@ class Robot:
             poses_probs[i] = self.measurement_model(xt, imageMap)
         #normalizing the weights
         poses_probs = poses_probs/poses_probs.sum()
-        print(poses_probs.max(), poses_probs.min())
+        # print(poses_probs.max(), poses_probs.min())
         #resampling
         sampledPosesIndex = np.random.choice(range(self.N), size=self.N, p=poses_probs)
         self.currPoses = self.currPoses[sampledPosesIndex]
