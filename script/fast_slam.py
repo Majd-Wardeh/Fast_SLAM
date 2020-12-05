@@ -75,8 +75,7 @@ def ray_cast(xco, yco, image, scanAngles, Zmin=1.0, Zmax=30.0, pixelToMeterRatio
         else: # the ray did not hit any obstical in the image 
             ranges[i] = Zmax
     if debug:
-        # print(ranges)
-        pass
+        pass # print(ranges)
 
     return ranges
 
@@ -166,7 +165,7 @@ class GridMap:
 
 class Robot:
 
-    def __init__(self, N, scanNum=20, alphas=[0.04, 0.04, 0.04, 0.04], alpha=0.3, beta=0.0066, Phit_segma=0.6,\
+    def __init__(self, N, scanNum=20, alphas=[0.05, 0.05, 0.05, 0.05], alpha=0.3, beta=0.0066, Phit_segma=0.6,\
                                                              lambda_short=0.3, prob_weights=[0.95, 0.01, 0.02, 0.02], movement_thresh=0.1):
         self.N = N
         self.alphas = alphas
@@ -384,8 +383,6 @@ class Robot:
         self.currPoses = self.currPoses[sampledPosesIndex]
         self.lastOdomLocalization = self.currOdom
         
-
-
     def measurement_model(self, xt, imageMap):
         i, j = self.gmap.metersToPixelsIndex(xt)
         Zt_star = ray_cast(i, j, imageMap, self.K_scanAngles + xt[2], self.Zmin, self.Zmax, debug=True)
@@ -409,19 +406,12 @@ def main():
     rospy.Subscriber('/husky_velocity_controller/odom', Odometry, robot.odometryCallback)
     rospy.Subscriber('/scan', LaserScan, robot.laserScanCallback)
 
-    orginalIMage = cv2.imread("/home/majd/AUB/Mobile Robots/project/catkin_ws/src/fast_slam/maps/map.jpg")
+    imageMap = cv2.imread("/home/majd/AUB/Mobile Robots/project/catkin_ws/src/fast_slam/maps/map.jpg")
+
     time.sleep(0.1)
-    angles = np.random.choice(robot.scanAgles, 10) 
-    imageMap = np.zeros_like(orginalIMage)
-    imageMap[:, :, 0] = orginalIMage[:, :, 0] 
-    # gray_image =  orginalIMage[:, :, 0]
     while not rospy.is_shutdown():
         #robot.buildMap()
         robot.plotZt(imageMap)
-        # i, j = robot.gmap.metersToPixelsIndex(robot.worldPose)
-        # ranges = ray_cast(i, j, imageMap, robot.K_scanAngles + robot.worldPose[2], robot.Zmin, robot.Zmax, debug=True)
-        # Pztk = robot.measurement_model(robot.worldPose, imageMap)
-        # print(Pztk)
         robot.localize(imageMap)
         cv2.imshow('map',imageMap)
         key = cv2.waitKey(500)
@@ -432,16 +422,7 @@ def main():
 
 
 if __name__ == '__main__':
-
     try:
         main()
-        # gmap = GridMap()
-        # i, j = gmap.metersToPixelsIndex([5, -3])
-        # print(i, j)
-        # gmap.map[i, j] = 255
-        # gmap.map = cv2.circle(gmap.map, (100,100), radius=2, color=(0, 0, 255), thickness=-1)
-
-        # cv2.imshow('image', gmap.map) 
-        # cv2.waitKey(0)
     except rospy.ROSInterruptException:
         pass
