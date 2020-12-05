@@ -1,40 +1,67 @@
 import cv2
 import numpy as np
 from numpy import pi, cos, sin
+from math import sqrt
 
-image = cv2.imread("/home/majd/AUB/Mobile Robots/project/catkin_ws/src/fast_slam/maps/map.jpg")
-image = image[:, :, 0]
 
-xc = 100
-yc = 100
+def ray_cast(xc, yc, image, pixelToMeterRatio=0.1):
+    # x with w, x the horiontal axis
+    # y with h
+    h, w, _ = image.shape
+    yc = h-1 - yc
 
-MatrixSize = image.shape
 
-r = np.linspace(0, 30,10)
-n = 10
-thetastep = 2*pi/n
-for i in range(n):
-    theta = thetastep * i
-    print(theta)
-    print((r*cos(theta)))
-    x = xc + r*cos(theta)
-    y = yc + r*sin(theta)
-print(x)
-print(y)
-    # Removing points out of map
-    tempX = []
-    print('x.shape = ', x.shape)
-    for k in range(x.shape[0]):
-        if x[k] > MatrixSize[1] or x[k] <= 0:
-            tempX.append(k)
 
-    tempY = []
-    print('y.shape = ', y.shape)
-    for k in range(y.shape[0]):
-        if y[k] > MatrixSize[0] or y[k] <= 0: 
-            tempY.append(k)    
-    # x(temp)=[]
-    # y(temp)=[]
+    r = np.linspace(0, 200, 1000)
+    n = 8
+    thetastep = 2*pi/n
+    ranges = np.zeros((n,))
+    angles = np.zeros((n,))
+    for i in range(n):
+        theta = thetastep * i
+        angles[i] = theta
+        print('theta =',theta)
+        x = xc + r*cos(theta)
+        y = yc + r*sin(theta)
+    
+        xint = np.int32(np.round(x))
+        yint = np.int32(np.round(y))
+
+        index = np.logical_and(np.logical_and(xint < w, xint >= 0), np.logical_and(yint < h, yint >= 0))
+        xint = xint[index]
+        yint = yint[index]
+
+        intersection_index = np.argmax(image[xint, yint, 0])
+        px, py = xint[intersection_index], yint[intersection_index]
+        ranges[i] = sqrt( (px - xc)**2 + (py - yc)**2  )
+        print(intersection_index)
+
+        cv2.circle(image, (py, px), radius=2, color=(0, 0, 255), thickness=-1)
+        image[xint, yint, 1] = 255
+    print('------------------------')
+    ranges = ranges*pixelToMeterRatio
+    print(angles)
+    print(ranges)
+    cv2.imshow('image', image)
+    cv2.waitKey(0)
+
+
+
+# image = cv2.imread("/home/majd/AUB/Mobile Robots/project/catkin_ws/src/fast_slam/maps/map.jpg")
+# image = image[:, :, 0]
+
+image = np.zeros((201, 201, 3), dtype=np.uint8)
+margin = 8
+image[0:margin, :, 0] = 255
+image[-margin:, :, 0] = 255
+image[:, 0:margin, 0] = 255
+image[:, -margin:, 0] = 255
+
+xc = 10
+yc = 180
+
+ray_cast(xc, yc, image)
+
 
 
 

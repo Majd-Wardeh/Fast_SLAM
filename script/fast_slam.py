@@ -70,12 +70,12 @@ class Robot:
         return normalizer * P
     def calc_Pmax(self, Ztk):
         return int(Ztk == self.Zmax)
-    def calc_Pshort(Ztk, Zstar, lambda_short):
+    def calc_Pshort(self, Ztk):
         if Ztk < self.Zmin or Ztk > self.Zstar:
             return 0
         n = 1/(1-exp(-self.lambda_short * self.Zstar))
         return n * self.lambda_short * exp(-self.lambda_short*Ztk)
-        
+       
     def odometryCallback(self, msg):
         self.currOdom = self.getOdomPose(msg)
         if self.firstOdometry:
