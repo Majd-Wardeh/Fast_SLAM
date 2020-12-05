@@ -44,11 +44,69 @@ class GridMap:
         y = (self.height/2 - i) * self.acc 
         x = (j - self.width/2 ) * self.acc
         return (x, y)
+    
+    def ray_cast(self, xco, yco, Zmin=1.0, Zmax=30.0, debug=True):
+        # xco is coordinate of the horiontal axis which points right and has w as max value.
+        # yco is coordinate of the virtical axis which points up and has h as max value.
+        pixelToMeterRatio = self.acc
+        image = self.map
+        if debug:
+            h, w, c = image.shape
+            assert c == 3, "image must be an RGB image"
+        else:
+            h, w = image.shape
+        xc = h-1 - yco
+        yc = xco
+
+        r = np.linspace(Zmin/pixelToMeterRatio, Zmax/pixelToMeterRatio, 1000)
+        n = 8
+        thetastep = 2*pi/n
+        ranges = np.zeros((n,))
+        angles = np.zeros((n,))
+        for i in range(n):
+            theta = -thetastep * i
+            angles[i] = theta
+            x = xc + r*sin(theta)
+            y = yc + r*cos(theta)
         
+            xint = np.int32(np.round(x))
+            yint = np.int32(np.round(y))
+
+            index = np.logical_and(np.logical_and(xint < w, xint >= 0), np.logical_and(yint < h, yint >= 0))
+            xint = xint[index]
+            yint = yint[index]
+
+            if debug:
+                new_set = image[xint, yint, 0]
+            else:
+                new_set = image[xint, yint]
+
+            if new_set.size:
+                intersection_index = np.argmax(new_set)
+                px, py = xint[intersection_index], yint[intersection_index]
+                if debug:
+                    image[xint, yint, 1] = 255
+                    if image[px, py, 0] == 0:
+                        ranges[i] = Zmax
+                        continue
+                else:
+                    if image[px, py] == 0:
+                        ranges[i] = Zmax
+                        continue                
+                ranges[i] = sqrt( (px - xc)**2 + (py - yc)**2  )*pixelToMeterRatio
+                if debug: #plot the intersection as a point
+                    cv2.circle(image, (py, px), radius=2, color=(0, 0, 255), thickness=-1)
+            else: # the ray did not hit any obstical in the image 
+                ranges[i] = Zmax
+        if debug:
+            print(angles)
+            print(ranges)
+        # cv2.imshow('image', image)
+        # cv2.waitKey(0)
 
 class Robot:
 
-    def __init__(self, N, alphas = [0.3, 0.08, 0.08, 0.3], alpha=0.3, beta=0.0066, Phit_mean=, Phit_segma=):
+    def __init__(self, N, alphas = [0.3, 0.08, 0.08, 0.3], alpha=0.3, beta=0.0066, Phit_segma=1.0, lambda_short=0.3):
         self.N = N
         self.alphas = alphas
         self.firstOdometry = True
@@ -59,22 +117,28 @@ class Robot:
         self.gmap = GridMap()
 
         self.Zmin = 0
-        self.Phit_semga = 
+        self.Phit_semga = Phit_segma
+        self.lambda_short = lambda_short
 
 
-    def calc_Phit(self, Ztk):
-        if Ztk < self.Zmin or Ztk > self.Zmax:
-            return 0
-        P = (1/sqrt(2*pi*self.Phit_segma^2)) * exp(-0.5*(Ztk-self.Phit_mean)^2/Phit_segma^2)
-        normalizer = 1
-        return normalizer * P
-    def calc_Pmax(self, Ztk):
-        return int(Ztk == self.Zmax)
-    def calc_Pshort(self, Ztk):
+    def calcProbabilities(self, Ztk, Zstar):
+        #calc_Phit and calc_Prand
+        if Ztk <= self.Zmin or Ztk => self.Zmax:
+            Phit = 0
+            Prand = 0
+        else:
+            Phit = (1/sqrt(2*pi*self.Phit_segma^2)) * exp(-0.5*(Ztk-Zstar)^2/Phit_segma^2)
+            Prand = 1.0/(self.Zmax-self.Zmin)
+        #calc_Pmax
+        Pmax = int(Ztk == self.Zmax)
+        #calc_Pshort
         if Ztk < self.Zmin or Ztk > self.Zstar:
-            return 0
-        n = 1/(1-exp(-self.lambda_short * self.Zstar))
-        return n * self.lambda_short * exp(-self.lambda_short*Ztk)
+            Pshort = 0
+        else:
+            n = 1/(1-exp(-self.lambda_short * self.Zstar))
+            Pshort = n * self.lambda_short * exp(-self.lambda_short*Ztk)
+
+        return [Phit, Pshort, Pmax, Prand]
        
     def odometryCallback(self, msg):
         self.currOdom = self.getOdomPose(msg)
