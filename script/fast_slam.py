@@ -407,6 +407,8 @@ def main():
     rospy.Subscriber('/scan', LaserScan, robot.laserScanCallback)
 
     imageMap = cv2.imread("/home/majd/AUB/Mobile Robots/project/catkin_ws/src/fast_slam/maps/map.jpg")
+    robot.gmap = GridMap(height=imageMap.shape[0], width=imageMap.shape[1])
+    robot.gmap.map = imageMap
 
     time.sleep(0.1)
     while not rospy.is_shutdown():
