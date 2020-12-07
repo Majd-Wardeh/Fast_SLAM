@@ -23,7 +23,7 @@ matplotlib.use('TkAgg')
 from matplotlib import pyplot as plt
 
 
-def ray_cast(xco, yco, image, scanAngles, Zmin=1.0, Zmax=30.0, pixelToMeterRatio=0.1, debug=False):
+def ray_cast(xco, yco, image, scanAngles, Zmin=1.0, Zmax=30.0, pixelToMeterRatio=0.1, thresh = 128, debug=False):
     if debug:
         h, w, c = image.shape
         assert c == 3, "image must be an RGB image"
@@ -47,14 +47,14 @@ def ray_cast(xco, yco, image, scanAngles, Zmin=1.0, Zmax=30.0, pixelToMeterRatio
         yint = yint[index]
 
         if debug:
-            new_set = image[xint, yint, 0]
+            new_set = image[xint, yint, 0] > thresh
         else:
-            new_set = image[xint, yint]
+            new_set = image[xint, yint] > thresh
 
         if new_set.size:
             intersection_index = np.argmax(new_set)
-            if intersection_index == 0:
-                print('the intersection_index is equal to zero!')
+            # if intersection_index == 0:
+            #     print('the intersection_index is equal to zero!')
             px, py = xint[intersection_index], yint[intersection_index]
             if debug:
                 #image[xint[0:50], yint[0:50], 1] = 255
@@ -343,14 +343,9 @@ class Robot:
         if amountOfMovement < self.movement_thresh:
             return
 
-        # computing the weights
-        # poses_probs = np.zeros((self.N, ))
-        # for i, xt in enumerate(self.currPoses):
-        #     poses_probs[i] = self.measurement_model(xt, imageMap)
-
         #normalizing the weights
-        print('resampling')
-        # print(poses_probs.max(), poses_probs.min())
+        print('resampling, with max prob = '.format(self.weights.max()))
+
         #resampling
         sampledParticlesIndices = np.random.choice(range(self.N), size=self.N, p=self.weights)
         self.currPoses = self.currPoses[sampledParticlesIndices]
@@ -377,36 +372,37 @@ class Robot:
         for k in range(self.N):
            xt = self.currPoses[k]
            self.weights[k] = self.measurement_model(xt, self.gmaps[k].map)
+        #    bw = np.uint8(self.gmaps[k].map > 125)
+        #    print(bw.shape)
            self.gmaps[k].map = self.update_occupancy_grid(xt, self.gmaps[k].map)
         self.weights = self.weights/self.weights.sum()
-
+        print(self.weights)
 
 
 def main():
-
     rospy.init_node('fast_slam', anonymous=True)
     robot = Robot(4)
     rospy.Subscriber('/gazebo/link_states', LinkStates, robot.linkStatesCallback)
     time.sleep(0.01)
+
     rospy.Subscriber('/husky_velocity_controller/odom', Odometry, robot.odometryCallback)
     rospy.Subscriber('/scan', LaserScan, robot.laserScanCallback)
-
 
     time.sleep(0.1)
 
     while not rospy.is_shutdown():
-            
+        start = time.time()
         Ws = robot.sample_particles()
+        freq = 1/(time.time() - start)
+        print(freq)
         robot.resample()
-
+        
         for i in range(robot.N):
             robot.plotZt(robot.gmaps[i].map, robot.currPoses[i])
             cv2.imshow('maps[{}]'.format(i),robot.gmaps[i].map)
         key = cv2.waitKey(1)
         if key == ord('q'):
             break
-
-
 
 
 if __name__ == '__main__':
