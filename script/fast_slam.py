@@ -24,15 +24,11 @@ from matplotlib import pyplot as plt
 
 
 def ray_cast(xco, yco, image, scanAngles, Zmin=1.0, Zmax=30.0, pixelToMeterRatio=0.1, debug=False):
-    # xco with w, x the horiontal axis pointing right
-    # y with h, y the virtical axis pointing up
     if debug:
         h, w, c = image.shape
         assert c == 3, "image must be an RGB image"
     else:
         h, w = image.shape
-    # xc = h-1 - yco
-    # yc = xco
     xc = xco
     yc = yco
     r = np.linspace(Zmin/pixelToMeterRatio, Zmax/pixelToMeterRatio, 1000)
@@ -166,7 +162,7 @@ class GridMap:
 class Robot:
 
     def __init__(self, N, scanNum=20, alphas=[0.05, 0.05, 0.05, 0.05], alpha=0.3, beta=0.0066, Phit_segma=0.6,\
-                                                             lambda_short=0.3, prob_weights=[0.95, 0.01, 0.02, 0.02], movement_thresh=0.1):
+                                    lambda_short=0.3, prob_weights=[0.95, 0.01, 0.02, 0.02], movement_thresh=0.1):
         self.N = N
         self.alphas = alphas
         self.firstOdometry = True
@@ -174,13 +170,14 @@ class Robot:
         self.firstLaserScan = True
         self.sensorAlpha = alpha
         self.sensorBeta = beta
-        self.gmap = GridMap()
+        self.gmaps = np.array([GridMap() for _ in range(N)])
         self.scanNum = scanNum
         self.Zmin = 0
         self.Phit_segma = Phit_segma
         self.lambda_short = lambda_short
         self.prob_weights = np.array(prob_weights, np.float64)
         self.movement_thresh = movement_thresh
+        self.weights = np.ones((N,))* 1/N
 
     def calcProbabilities(self, Ztk, Zstar):
         #calc_Phit and calc_Prand
@@ -301,90 +298,69 @@ class Robot:
                 .format(phai, self.worldPose[2], xi, yi))        
         return value
 
-    def buildMap(self):
-        self.gmap.map[:, :, 1] = 0
-        self.gmap.map[:, :, 2] = 0
-        for i in range(self.gmap.height):
-            for j in range(self.gmap.width):
-                xi, yi = self.gmap.PixelToMeter(i, j)
-                value = self.inverse_range_sensor_model(xi, yi)
-                #tmp = self.gmap.map[i, j, 0] + value
-                #self.gmap.map[i, j, 0] = max(0, min(tmp, 255))
-                self.gmap.map[i, j, 0] = np.clip(self.gmap.map[i, j, 0] + value, 0, 255)
-                # if value > 0:
-                #     self.gmap.map[i, j, 1] = 255
-
-        i, j = self.gmap.metersToPixelsIndex(self.worldPose)
-        xi, yi = self.gmap.PixelToMeter(i, j)
-        cv2.circle(self.gmap.map, (j,i), radius=2, color=(0, 0, 255), thickness=-1)
-        
-        rotated_angles = self.scanAgles + self.worldPose[2]
-        for i, angle in enumerate(rotated_angles):
-            if self.Zt[i] == float('inf'):
-                continue
-            x = self.worldPose[0] + self.Zt[i] *np.cos(angle)
-            y = self.worldPose[1] + self.Zt[i] *np.sin(angle)
-            i, j = self.gmap.metersToPixelsIndex([x, y])
-            if(i>210 or j>210):
-                continue
-            self.gmap.map[i, j, 2] = 255 
-            x = self.worldPose[0] + 2 *np.cos(angle)
-            y = self.worldPose[1] + 2 *np.sin(angle)
-            i, j = self.gmap.metersToPixelsIndex([x, y])
-            if(i>210 or j>210):
-                continue
-            self.gmap.map[i, j, 1] = 255 
-
-    def plotZt(self, image):
+    def plotZt(self, image, pose):
         image[:, :, 1] = 0
         image[:, :, 2] = 0
         # rotated_angles = self.K_scanAngles + self.worldPose[2]
         for i in self.K_scanAngles_indices:
-            angle = self.scanAgles[i] + self.worldPose[2]
+            angle = self.scanAgles[i] + pose[2]
             if self.Zt[i] == float('inf'):
                 continue
-            x = self.worldPose[0] + self.Zt[i] *np.cos(angle)
-            y = self.worldPose[1] + self.Zt[i] *np.sin(angle)
-            i, j = self.gmap.metersToPixelsIndex([x, y])
+            x = pose[0] + self.Zt[i] *np.cos(angle)
+            y = pose[1] + self.Zt[i] *np.sin(angle)
+            i, j = self.gmaps[0].metersToPixelsIndex([x, y])
             if(i>210 or j>210):
                 continue
             image[i-1:i+1, j-1:j+1, 1] = 255 
-            x = self.worldPose[0] + 2 *np.cos(angle)
-            y = self.worldPose[1] + 2 *np.sin(angle)
-            i, j = self.gmap.metersToPixelsIndex([x, y])
+            x = pose[0] + 2 *np.cos(angle)
+            y = pose[1] + 2 *np.sin(angle)
+            i, j = self.gmaps[0].metersToPixelsIndex([x, y])
             if(i>210 or j>210):
                 continue
             image[i-1:i+1, j-1:j+1, 1] = 255
-            for pose in self.currPoses:
-                i, j = self.gmap.metersToPixelsIndex(pose)
-                image[i-1:i+1, j, 2] = 255
-                image[i, j-1:j+1, 2] = 255  
+            #for pose in self.currPoses:
+            i, j = self.gmaps[0].metersToPixelsIndex(pose)
+            image[i-1:i+1, j, 2] = 255
+            image[i, j-1:j+1, 2] = 255  
 
-            i, j = self.gmap.metersToPixelsIndex(self.worldPose)
-            image[i-1:i+1, j, 1] = 255
-            image[i, j-1:j+1, 1] = 255
+            # i, j = self.gmaps[0].metersToPixelsIndex(pose)
+            # image[i-1:i+1, j, 1] = 255
+            # image[i, j-1:j+1, 1] = 255
 
-    def localize(self, imageMap):
+    def update_occupancy_grid(self, xt, prevMap):
+        for i in range(self.gmaps[0].height):
+            for j in range(self.gmaps[0].width):
+                xi, yi = self.gmaps[0].PixelToMeter(i, j)
+                value = self.inverse_range_sensor_model(xi, yi)
+                prevMap[i, j, 0] = np.clip(prevMap[i, j, 0] + value, 0, 255)
+        return prevMap
+
+
+    def resample(self):
         #if the robot is not moving, we do not resample
         amountOfMovement = la.norm(self.currOdom[0:1]-self.lastOdomLocalization[0:1])
         # print('amount of movement = {}'.format(amountOfMovement))
         if amountOfMovement < self.movement_thresh:
             return
-        print('Localizing...')
+
         # computing the weights
-        poses_probs = np.zeros((self.N, ))
-        for i, xt in enumerate(self.currPoses):
-            poses_probs[i] = self.measurement_model(xt, imageMap)
+        # poses_probs = np.zeros((self.N, ))
+        # for i, xt in enumerate(self.currPoses):
+        #     poses_probs[i] = self.measurement_model(xt, imageMap)
+
         #normalizing the weights
-        poses_probs = poses_probs/poses_probs.sum()
+        print('resampling')
         # print(poses_probs.max(), poses_probs.min())
         #resampling
-        sampledPosesIndex = np.random.choice(range(self.N), size=self.N, p=poses_probs)
-        self.currPoses = self.currPoses[sampledPosesIndex]
+        sampledParticlesIndices = np.random.choice(range(self.N), size=self.N, p=self.weights)
+        self.currPoses = self.currPoses[sampledParticlesIndices]
+        self.weights = self.weights[sampledParticlesIndices]
+        self.gmaps = self.gmaps[sampledParticlesIndices]
+
         self.lastOdomLocalization = self.currOdom
         
     def measurement_model(self, xt, imageMap):
-        i, j = self.gmap.metersToPixelsIndex(xt)
+        i, j = self.gmaps[0].metersToPixelsIndex(xt)
         Zt_star = ray_cast(i, j, imageMap, self.K_scanAngles + xt[2], self.Zmin, self.Zmax, debug=True)
         P_Ztk = 1
         for i, k in enumerate(self.K_scanAngles_indices):
@@ -396,27 +372,37 @@ class Robot:
             P_Ztk = P_Ztk * p    
         return P_Ztk
 
+    def sample_particles(self):
+        self.weights = np.zeros((self.N, ))
+        for k in range(self.N):
+           xt = self.currPoses[k]
+           self.weights[k] = self.measurement_model(xt, self.gmaps[k].map)
+           self.gmaps[k].map = self.update_occupancy_grid(xt, self.gmaps[k].map)
+        self.weights = self.weights/self.weights.sum()
+
+
 
 def main():
 
     rospy.init_node('fast_slam', anonymous=True)
-    robot = Robot(40)
+    robot = Robot(4)
     rospy.Subscriber('/gazebo/link_states', LinkStates, robot.linkStatesCallback)
     time.sleep(0.01)
     rospy.Subscriber('/husky_velocity_controller/odom', Odometry, robot.odometryCallback)
     rospy.Subscriber('/scan', LaserScan, robot.laserScanCallback)
 
-    imageMap = cv2.imread("/home/majd/AUB/Mobile Robots/project/catkin_ws/src/fast_slam/maps/map.jpg")
-    robot.gmap = GridMap(height=imageMap.shape[0], width=imageMap.shape[1])
-    robot.gmap.map = imageMap
 
     time.sleep(0.1)
+
     while not rospy.is_shutdown():
-        #robot.buildMap()
-        robot.plotZt(imageMap)
-        robot.localize(imageMap)
-        cv2.imshow('map',imageMap)
-        key = cv2.waitKey(500)
+            
+        Ws = robot.sample_particles()
+        robot.resample()
+
+        for i in range(robot.N):
+            robot.plotZt(robot.gmaps[i].map, robot.currPoses[i])
+            cv2.imshow('maps[{}]'.format(i),robot.gmaps[i].map)
+        key = cv2.waitKey(1)
         if key == ord('q'):
             break
 
