@@ -76,11 +76,12 @@ def ray_cast(xco, yco, image, scanAngles, Zmin=1.0, Zmax=30.0, pixelToMeterRatio
 
     return ranges
 
-def update_occupancy_grid_optimized(xco, yco, image, scanAngles, Zt, Zmax=30.0, pixelToMeterRatio=0.1, l0 = 70, lfree = 0, locc = 150):
-    update_image = np.ones_like(image) * l0
+def update_occupancy_grid_optimized(xco, yco, image, scanAngles, Zt, Zmax=30.0, pixelToMeterRatio=0.1, l0 = 0, lfree = -5, locc = 20, alpha=0.3):
     xc = xco
     yc = yco
+    pixelAlpha = min(-1 *int(round(alpha/pixelToMeterRatio)), -2)
     h, w, c = image.shape
+    update_image = np.ones((h, w, c), dtype=np.int8) * l0
     floatInf = float('inf')
     n = scanAngles.shape[0]
     for i in range(n):
@@ -98,10 +99,11 @@ def update_occupancy_grid_optimized(xco, yco, image, scanAngles, Zt, Zmax=30.0, 
         xint = xint[index]
         yint = yint[index]
 
-        update_image[xint, yint, 0] = 255 #lfree
-        update_image[xint[-1], yint[-1], 0] =  0 #locc
+        update_image[xint, yint, 0] = lfree
+        update_image[xint[pixelAlpha:-1], yint[pixelAlpha:-1], 0] = locc
 
-    return update_image
+    image = np.uint8(np.clip(image + update_image, 0, 255))
+    return image
 
 
 class GridMap:
@@ -428,13 +430,12 @@ def main():
     while not rospy.is_shutdown():
         start = time.time()
         i, j = robot.gmaps[0].metersToPixelsIndex(robot.worldPose)
-        image = update_occupancy_grid_optimized(i, j, imageMap, robot.scanAgles + robot.worldPose[2], robot.Zt)
+        imageMap = update_occupancy_grid_optimized(i, j, imageMap, robot.scanAgles + robot.worldPose[2], robot.Zt)
         freq = 1/(time.time() - start)
         print(freq)
+        robot.plotZt(imageMap, robot.worldPose)
 
-        robot.plotZt(image, robot.worldPose)
-
-        cv2.imshow('image', image)
+        cv2.imshow('image', imageMap)
         key = cv2.waitKey(1)
         if key == ord('q'):
             break
