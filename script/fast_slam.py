@@ -22,7 +22,7 @@ import matplotlib
 matplotlib.use('TkAgg')
 from matplotlib import pyplot as plt
 
-import pathos.pools as pp
+# import pathos.pools as pp
 
 def ray_cast(xco, yco, image, scanAngles, Zmin=1.0, Zmax=30.0, pixelToMeterRatio=0.1, thresh = 128, debug=False):
     if debug:
@@ -76,6 +76,32 @@ def ray_cast(xco, yco, image, scanAngles, Zmin=1.0, Zmax=30.0, pixelToMeterRatio
 
     return ranges
 
+def update_occupancy_grid_optimized(xco, yco, image, scanAngles, Zt, Zmax=30.0, pixelToMeterRatio=0.1, l0 = 70, lfree = 0, locc = 150):
+    update_image = np.ones_like(image) * l0
+    xc = xco
+    yc = yco
+    h, w, c = image.shape
+    floatInf = float('inf')
+    n = scanAngles.shape[0]
+    for i in range(n):
+        theta = -scanAngles[i]
+        if Zt[i] == floatInf:
+            Zt[i] = Zmax
+        r = np.linspace(0, Zt[i]/pixelToMeterRatio, int(Zt[i]*500/Zmax))
+        x = xc + r*sin(theta)
+        y = yc + r*cos(theta)
+    
+        xint = np.int32(np.round(x))
+        yint = np.int32(np.round(y))
+
+        index = np.logical_and(np.logical_and(xint < w, xint >= 0), np.logical_and(yint < h, yint >= 0))
+        xint = xint[index]
+        yint = yint[index]
+
+        update_image[xint, yint, 0] = 255 #lfree
+        update_image[xint[-1], yint[-1], 0] =  0 #locc
+
+    return update_image
 
 
 class GridMap:
@@ -162,7 +188,7 @@ class GridMap:
 
 class Robot:
 
-    def __init__(self, N, scanNum=20, alphas=[0.05, 0.05, 0.05, 0.05], alpha=0.3, beta=0.0066, Phit_segma=0.6,\
+    def __init__(self, N, scanNum=20, alphas=[0.05, 0.05, 0.05, 0.05], alpha=0.1, beta=0.0066, Phit_segma=0.6,\
                                     lambda_short=0.3, prob_weights=[0.95, 0.01, 0.02, 0.02], movement_thresh=0.1):
         self.N = N
         self.alphas = alphas
@@ -180,7 +206,7 @@ class Robot:
         self.movement_thresh = movement_thresh
         self.weights = np.ones((N,))* 1/N
 
-        self.p = pp.ProcessPool(4)
+        # self.p = pp.ProcessPool(4)
 
     def calcProbabilities(self, Ztk, Zstar):
         #calc_Phit and calc_Prand
@@ -330,15 +356,16 @@ class Robot:
             # image[i-1:i+1, j, 1] = 255
             # image[i, j-1:j+1, 1] = 255
 
-    def update_occupancy_grid(self, k, xt=None, prevMap=None):
-        xt = self.currPoses[k]
-        prevMap = self.gmaps[k].map
+    def update_occupancy_grid(self, xt, prevMap):
         for i in range(self.gmaps[0].height):
             for j in range(self.gmaps[0].width):
                 xi, yi = self.gmaps[0].PixelToMeter(i, j)
                 value = self.inverse_range_sensor_model(xi, yi)
                 prevMap[i, j, 0] = np.clip(prevMap[i, j, 0] + value, 0, 255)
         return prevMap
+
+
+
 
 
     def resample(self):
@@ -387,7 +414,7 @@ class Robot:
 
 def main():
     rospy.init_node('fast_slam', anonymous=True)
-    robot = Robot(4)
+    robot = Robot(1)
     rospy.Subscriber('/gazebo/link_states', LinkStates, robot.linkStatesCallback)
     time.sleep(0.01)
 
@@ -396,16 +423,18 @@ def main():
 
     time.sleep(0.1)
 
+    imageMap = robot.gmaps[0].map
+
     while not rospy.is_shutdown():
         start = time.time()
-        Ws = robot.sample_particles()
+        i, j = robot.gmaps[0].metersToPixelsIndex(robot.worldPose)
+        image = update_occupancy_grid_optimized(i, j, imageMap, robot.scanAgles + robot.worldPose[2], robot.Zt)
         freq = 1/(time.time() - start)
         print(freq)
-        robot.resample()
-        
-        for i in range(robot.N):
-            robot.plotZt(robot.gmaps[i].map, robot.currPoses[i])
-            cv2.imshow('maps[{}]'.format(i),robot.gmaps[i].map)
+
+        robot.plotZt(image, robot.worldPose)
+
+        cv2.imshow('image', image)
         key = cv2.waitKey(1)
         if key == ord('q'):
             break
