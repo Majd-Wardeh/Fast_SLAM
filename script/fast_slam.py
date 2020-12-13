@@ -22,6 +22,7 @@ import matplotlib
 matplotlib.use('TkAgg')
 from matplotlib import pyplot as plt
 
+import pathos.pools as pp
 
 def ray_cast(xco, yco, image, scanAngles, Zmin=1.0, Zmax=30.0, pixelToMeterRatio=0.1, thresh = 128, debug=False):
     if debug:
@@ -179,6 +180,8 @@ class Robot:
         self.movement_thresh = movement_thresh
         self.weights = np.ones((N,))* 1/N
 
+        self.p = pp.ProcessPool(4)
+
     def calcProbabilities(self, Ztk, Zstar):
         #calc_Phit and calc_Prand
         if Ztk < self.Zmin or Ztk > self.Zmax:
@@ -327,7 +330,9 @@ class Robot:
             # image[i-1:i+1, j, 1] = 255
             # image[i, j-1:j+1, 1] = 255
 
-    def update_occupancy_grid(self, xt, prevMap):
+    def update_occupancy_grid(self, k, xt=None, prevMap=None):
+        xt = self.currPoses[k]
+        prevMap = self.gmaps[k].map
         for i in range(self.gmaps[0].height):
             for j in range(self.gmaps[0].width):
                 xi, yi = self.gmaps[0].PixelToMeter(i, j)
@@ -374,10 +379,11 @@ class Robot:
            self.weights[k] = self.measurement_model(xt, self.gmaps[k].map)
         #    bw = np.uint8(self.gmaps[k].map > 125)
         #    print(bw.shape)
-           self.gmaps[k].map = self.update_occupancy_grid(xt, self.gmaps[k].map)
+        pool_list = range(self.N)
+        self.p.map(self.update_occupancy_grid, pool_list)
+        # new_maps = self.update_occupancy_grid(xt, self.gmaps[k].map)
         self.weights = self.weights/self.weights.sum()
         print(self.weights)
-
 
 def main():
     rospy.init_node('fast_slam', anonymous=True)
