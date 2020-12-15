@@ -115,13 +115,13 @@ class Graph:
 def main():
     rgb_image = cv2.imread("/home/majd/AUB/Mobile Robots/project/catkin_ws/src/fast_slam/maps/map.jpg")
 
-    image = np.uint8(rgb_image[:, :, 0] > 128)*255
+    img = np.uint8(rgb_image[:, :, 0] > 128)*255
     rgb_image[:, :, 1] = 0
     rgb_image[:, :, 2] = 0
 
     # kernel = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0] ], dtype=np.uint8)
     kernel = np.array([[1, 1, 1], [1, 1, 1], [1, 1, 1] ], dtype=np.uint8)
-    img = cv2.dilate(image, kernel, iterations=5)
+    img = cv2.dilate(img, kernel, iterations=5)
 
     Start = np.array([80, 180])
     Goal = np.array([150, 50])
