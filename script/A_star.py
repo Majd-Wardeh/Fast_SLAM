@@ -8,15 +8,15 @@ from math import sqrt
 from Queue import PriorityQueue
 
 class Node:
-    width = 211    
-    def __init__(self, point, parent, G_value, H_value):
+       
+    def __init__(self, point, parent, G_value, H_value, width=211):
         self.point = point
         self.parent = parent
         self.G = G_value
         self.H = H_value
         self.priority_value = G_value + H_value
 
-        self.id = point[0]*self.width + point[1]
+        self.id = point[0]*width + point[1]
 
     def __lt__(self, other):
         return self.priority_value < other.priority_value
@@ -120,8 +120,8 @@ kernel2 = np.array([[1, 1, 1], [1, 1, 1], [1, 1, 1] ], dtype=np.uint8)
 # updated_image1 = cv2.dilate(image, kernel1, iterations=5)
 img = cv2.dilate(image, kernel2, iterations=5)
 S = np.array([80, 180])
+# G = np.array([150, 50])
 G = np.array([150, 50])
-
 
 #debug
 # img = np.zeros((10, 10), dtype=np.uint8)
