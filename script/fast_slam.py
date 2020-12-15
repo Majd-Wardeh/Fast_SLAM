@@ -22,7 +22,8 @@ import matplotlib
 matplotlib.use('TkAgg')
 from matplotlib import pyplot as plt
 
-# import pathos.pools as pp
+
+from pathos.multiprocessing import ProcessingPool
 
 def ray_cast(xco, yco, image, scanAngles, Zmin=1.0, Zmax=30.0, pixelToMeterRatio=0.1, thresh = 200, debug=True):
     if debug:
@@ -434,7 +435,6 @@ class Robot:
         return P_Ztk
 
     def sample_particles(self):
-
         for k in range(self.N):
             xt = self.currPoses[k]
             self.weights[k] = self.measurement_model(xt, self.gmaps[k].map)
@@ -446,6 +446,29 @@ class Robot:
 
         self.weights = self.weights/self.weights.sum()
         #print(self.weights)
+
+    def sample_particles_multiprocess(self):
+        xt_list = []
+        imageMap_list = []
+        for k in range(self.N):
+            xt_list.append(self.currPoses[k])
+            imageMap_list.append(self.gmaps[k].map)
+        weights_list = ProcessingPool().map(self.measurement_model, xt_list, imageMap_list)
+        print(weights_list)
+
+        for k in range(self.N):
+            xt = xt_list[k]
+            self.weights[k] = self.measurement_model(xt, self.gmaps[k].map)
+            self.update_map_count += 1
+            if self.update_map_count > 5:
+                self.update_map_count = 0
+                i, j = self.gmaps[0].metersToPixelsIndex(xt)
+                self.gmaps[k].map = update_occupancy_grid_optimized(i, j, self.gmaps[k].map, self.scanAgles + xt[2], self.Zt)
+
+        # self.weights = self.weights/self.weights.sum()
+        #print(self.weights)
+
+    
 
 def main():
     rospy.init_node('fast_slam', anonymous=True)
@@ -480,10 +503,11 @@ def main():
         # cv2.imshow('map[{}]'.format(0), image)
 
         start = time.time()
+        # robot.sample_particles_multiprocess() 
         robot.sample_particles()
         freq = 1/(time.time() - start)
         print(freq)
-        robot.resample()
+        #robot.resample()
         for num, k in enumerate(robot.weights.argsort()[-numWindows:]):
             robot.plotZt(robot.gmaps[k].map, robot.currPoses[k])
             cv2.imshow('map[{}]'.format(num), robot.gmaps[k].map)
