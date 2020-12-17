@@ -132,10 +132,11 @@ class GridMap:
 
 
 class Robot:
-#alphas=[0.008, 0.0008, 0.017, 0.01] 
+# alphas=[0.008, 0.0008, 0.017, 0.01] 
 # alphas=[0.009, 0.001, 0.017, 0.01]
 # alphas=[0.012, 0.0012, 0.017, 0.01]
-    def __init__(self, N, scanNum=30, alphas=[0.015, 0.0022, 0.012, 0.01], alpha=0.1, beta=0.0066, Phit_segma=0.4,\
+# alphas=[0.015, 0.0022, 0.012, 0.01]
+    def __init__(self, N, scanNum=30, alphas=[0.015, 0.0022, 0.017, 0.01], alpha=0.1, beta=0.0066, Phit_segma=0.4,\
                                     lambda_short=0.4, prob_weights=[0.95, 0.01, 0.02, 0.02], movement_thresh=0.1):
         self.N = N
         self.alphas = alphas
@@ -279,7 +280,7 @@ class Robot:
             print("Error in inverse_range_sensor_model with phai={} and robotWangle={}, xi={},yi={}"\
                 .format(phai, self.worldPose[2], xi, yi))        
         return value
-                
+
     def plotZt(self, image, pose):
         image[:, :, 1] = 0
         image[:, :, 2] = 0
@@ -407,11 +408,11 @@ class Robot:
             self.must_resample = True
             print('robot.must_resample equals True')
             self.perform_resampling()
-        self.prev_movement = robot.movement
+        self.prev_movement = self.movement
 
         self.resampleCounter += 1
         if self.resampleCounter > 30 and self.movement == True:
-            robot.perform_resampling()
+            self.perform_resampling()
 
     def perform_resampling(self):        
         max_weight = self.weights.max()
@@ -443,34 +444,14 @@ def main():
         win_name = 'map[{}]'.format(i)
         cv2.namedWindow(win_name)
         cv2.moveWindow(win_name, 80 + 220*i, 20)
-
-    # image = cv2.imread("/home/majd/AUB/Mobile Robots/project/catkin_ws/src/fast_slam/maps/map_optimized.jpg") 
-    image = np.zeros((211, 211, 3), dtype=np.uint8) #cv2.imread("/home/majd/AUB/Mobile Robots/project/catkin_ws/src/fast_slam/maps/map.jpg") 
-    # kernel = np.array([[1, 1, 1], [1, 1, 1], [1, 1, 1] ], dtype=np.uint8)
-    # kernel = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0] ], dtype=np.uint8)
-    # img = cv2.dilate(img, kernel, iterations=4)
     
     while not rospy.is_shutdown():
-        # r.sleep()
-        # image[:, :, 1] = 0
-        # image[:, :, 2] = 0
-        # Zt = robot.Zt
-        # wpose = robot.worldPose
-        # weight = robot.measurement_model_enhanced(wpose, image, Zt)
-        # i, j = robot.gmaps[0].metersToPixelsIndex(wpose)
-        # image = update_occupancy_grid_optimized(i, j, image, robot.scanAgles + wpose[2], Zt)
-        # print(weight)
-        # robot.plotCurrPoses(image)
-        # # robot.plotZt_hat(image, wpose, low_probs_indices, Zt_hat)
-        # robot.plotZt(image, wpose)
-        # cv2.imshow('image', image)
-
 
         start = time.time()
         Zt = robot.Zt
         varialbe = robot.sample_particles_multiprocess(Zt)
         freq = 1/(time.time() - start)
-        print(freq)
+        print('Hz = {}'.format(freq))
 
         for i, l in enumerate(varialbe):
            robot.weights[i], robot.gmaps[i].map = l
@@ -485,9 +466,6 @@ def main():
         key = cv2.waitKey(1)
         if key == ord('q'):
             break
-        elif key == ord('f'):
-            cv2.imwrite('map_optimized.jpg', image[:, :, 0])
-
         
 
 if __name__ == '__main__':
