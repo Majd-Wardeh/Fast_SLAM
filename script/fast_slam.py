@@ -77,7 +77,7 @@ def ray_cast(xco, yco, image, scanAngles, Zmin=1.0, Zmax=30.0, pixelToMeterRatio
 
     return ranges
 
-def update_occupancy_grid_optimized(xco, yco, image, scanAngles, Zt, Zmax=30.0, pixelToMeterRatio=0.1, l0 = 0, lfree = -1, locc = 8, alpha=0.3):
+def update_occupancy_grid_optimized(xco, yco, image, scanAngles, Zt, Zmax=30.0, pixelToMeterRatio=0.1, l0 = 0, lfree = -1, locc = 12, alpha=0.3):
     xc = xco
     yc = yco
     pixelAlpha = min(-1 *int(round(alpha/pixelToMeterRatio)), -2)
@@ -132,9 +132,10 @@ class GridMap:
 
 
 class Robot:
-#alphas=[0.008, 0.0008, 0.017, 0.01]
+#alphas=[0.008, 0.0008, 0.017, 0.01] 
 # alphas=[0.009, 0.001, 0.017, 0.01]
-    def __init__(self, N, scanNum=30, alphas=[0.012, 0.0012, 0.017, 0.01], alpha=0.1, beta=0.0066, Phit_segma=0.4,\
+# alphas=[0.012, 0.0012, 0.017, 0.01] good for SLAM
+    def __init__(self, N, scanNum=30, alphas=[0.015, 0.0022, 0.012, 0.01], alpha=0.1, beta=0.0066, Phit_segma=0.4,\
                                     lambda_short=0.4, prob_weights=[0.95, 0.01, 0.02, 0.02], movement_thresh=0.1):
         self.N = N
         self.alphas = alphas
@@ -407,20 +408,9 @@ class Robot:
             xt_list.append(self.currPoses[k])
             imageMap_list.append(self.gmaps[k].map)
             Zt_list.append(zt)
-        weights_list = ProcessingPool().map(self.measurement_model_enhanced_with_occupency_grid, xt_list, imageMap_list, Zt_list)
+        weights_list = ProcessingPool().map(self.measurement_model_with_update_occupency_grid, xt_list, imageMap_list, Zt_list)
         return weights_list
 
-        for k in range(self.N):
-            xt = xt_list[k]
-            self.weights[k] = self.measurement_model(xt, self.gmaps[k].map)
-            self.update_map_count += 1
-            if self.update_map_count > 5:
-                self.update_map_count = 0
-                i, j = self.gmaps[0].metersToPixelsIndex(xt)
-                self.gmaps[k].map = update_occupancy_grid_optimized(i, j, self.gmaps[k].map, self.scanAgles + xt[2], self.Zt)
-
-        # self.weights = self.weights/self.weights.sum()
-        #print(self.weights)
 
     def plotCurrPoses(self, image):
         image[:, :, 1] = 0
@@ -461,7 +451,7 @@ class Robot:
         P_Ztk = np.prod(probs)
         return P_Ztk
 
-    def measurement_model_enhanced_with_occupency_grid(self, xt, imageMap, Zt):
+    def measurement_model_with_update_occupency_grid(self, xt, imageMap, Zt):
         i, j = self.gmaps[0].metersToPixelsIndex(xt)
         Zt_star = ray_cast(i, j, imageMap, self.K_scanAngles + xt[2], self.Zmin, self.Zmax, debug=True)
         P_Ztk = 1
@@ -543,8 +533,6 @@ def main():
     # kernel = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0] ], dtype=np.uint8)
     # img = cv2.dilate(img, kernel, iterations=4)
     resampleCounter = 0
-    r = rospy.Rate(1.5)
-    plotCounter = 0
     while not rospy.is_shutdown():
         # r.sleep()
         # image[:, :, 1] = 0
