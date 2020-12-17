@@ -134,7 +134,7 @@ class GridMap:
 class Robot:
 #alphas=[0.008, 0.0008, 0.017, 0.01] 
 # alphas=[0.009, 0.001, 0.017, 0.01]
-# alphas=[0.012, 0.0012, 0.017, 0.01] good for SLAM
+# alphas=[0.012, 0.0012, 0.017, 0.01]
     def __init__(self, N, scanNum=30, alphas=[0.015, 0.0022, 0.012, 0.01], alpha=0.1, beta=0.0066, Phit_segma=0.4,\
                                     lambda_short=0.4, prob_weights=[0.95, 0.01, 0.02, 0.02], movement_thresh=0.1):
         self.N = N
@@ -153,50 +153,13 @@ class Robot:
         self.prob_weights = np.array(prob_weights, np.float64)
         self.movement_thresh = movement_thresh
         self.weights = np.ones((N,))* 1/N
-        self.update_map_count = 0
         self.update_motion_model_count = 0
         self.movement = False
         self.prev_movement = False
         self.must_resample = False
+        self.resampleCounter = 0
 
         # self.p = pp.ProcessPool(4)
-
-    def calcProbabilities(self, Ztk, Zstar):
-        #calc_Phit and calc_Prand
-        if Ztk < self.Zmin or Ztk > self.Zmax:
-            Phit = 0
-            Prand = 0
-        else:
-            Phit = (1/sqrt(2*pi*self.Phit_segma**2)) * exp(-0.5*(Ztk-Zstar)**2/(self.Phit_segma**2))
-            Prand = 1.0/(self.Zmax-self.Zmin)
-        #calc_Pmax
-        Pmax = int(Ztk == self.Zmax)
-        #calc_Pshort
-        if Ztk < self.Zmin or Ztk > Zstar:
-            Pshort = 0
-        else:
-            n = 1/(1-exp(-self.lambda_short * Zstar))
-            Pshort = n * self.lambda_short * exp(-self.lambda_short*Ztk)
-        probs = np.array([Phit, Pshort, Pmax, Prand], dtype=np.float64) 
-        #print('{} -> {} => {}'.format(Ztk, Ztk-Zstar, probs))
-        return probs
-
-    def odometryCallback(self, msg):
-        newOdom = self.getOdomPose(msg)
-        if self.firstOdometry:
-            self.firstOdometry = False
-            self.currOdom = newOdom
-            self.prevOdom = newOdom
-            self.lastOdomLocalization = self.currOdom
-            return
-        if la.norm(newOdom - self.currOdom) > 1E-3:
-            self.currPoses = self.sample_motion_model(newOdom)
-            self.movement = True
-            # print('movement')
-        else:
-            self.movement = False
-        self.prevOdom = self.currOdom
-        self.currOdom = newOdom
 
     def linkStatesCallback(self, msg):
         if self.firstLinkStates:
@@ -233,6 +196,7 @@ class Robot:
             msg.pose.pose.orientation.w)
         euler = tf.transformations.euler_from_quaternion(quaternion)
         return np.array([x, y, euler[2]])
+
     def getWorldPose(self, msg, robotIndex):
         x = msg.pose[robotIndex].position.x
         y = msg.pose[robotIndex].position.y
@@ -243,6 +207,24 @@ class Robot:
             msg.pose[robotIndex].orientation.w)
         euler = tf.transformations.euler_from_quaternion(quaternion)
         return np.array([x, y, euler[2]])
+
+    def odometryCallback(self, msg):
+        newOdom = self.getOdomPose(msg)
+        if self.firstOdometry:
+            self.firstOdometry = False
+            self.currOdom = newOdom
+            self.prevOdom = newOdom
+            self.lastOdomLocalization = self.currOdom
+            return
+        if la.norm(newOdom - self.currOdom) > 1E-3:
+            self.currPoses = self.sample_motion_model(newOdom)
+            self.movement = True
+            # print('movement')
+        else:
+            self.movement = False
+        self.prevOdom = self.currOdom
+        self.currOdom = newOdom  
+
     def sample_motion_model(self, newOdom):
         x1 = math.atan2(newOdom[1] - self.currOdom[1], newOdom[0] - self.currOdom[0])
         drot1 = x1 - self.currOdom[2]
@@ -264,6 +246,14 @@ class Robot:
         # return b*rn.sum()/6
         return np.random.normal(0, abs(b))
 
+    def update_occupancy_grid(self, xt, prevMap):
+        for i in range(self.gmaps[0].height):
+            for j in range(self.gmaps[0].width):
+                xi, yi = self.gmaps[0].PixelToMeter(i, j)
+                value = self.inverse_range_sensor_model(xi, yi)
+                prevMap[i, j, 0] = np.clip(prevMap[i, j, 0] + value, 0, 255)
+        return prevMap
+        
     def inverse_range_sensor_model(self, xi, yi):
         r = sqrt((xi-self.worldPose[0])**2 + (yi-self.worldPose[1])**2)
         phai = atan2(yi-self.worldPose[1], xi-self.worldPose[0]) - self.worldPose[2]
@@ -289,7 +279,7 @@ class Robot:
             print("Error in inverse_range_sensor_model with phai={} and robotWangle={}, xi={},yi={}"\
                 .format(phai, self.worldPose[2], xi, yi))        
         return value
-
+                
     def plotZt(self, image, pose):
         image[:, :, 1] = 0
         image[:, :, 2] = 0
@@ -319,58 +309,25 @@ class Robot:
         image[i-1:i+1, j, 2] = 255
         image[i, j-1:j+1, 2] = 255
 
-    def update_occupancy_grid(self, xt, prevMap):
-        for i in range(self.gmaps[0].height):
-            for j in range(self.gmaps[0].width):
-                xi, yi = self.gmaps[0].PixelToMeter(i, j)
-                value = self.inverse_range_sensor_model(xi, yi)
-                prevMap[i, j, 0] = np.clip(prevMap[i, j, 0] + value, 0, 255)
-        return prevMap
-
-    def resample(self):
-        #if the robot is not moving, we do not resample
-        amountOfMovement = la.norm(self.currOdom[0:1]-self.lastOdomLocalization[0:1])
-        # print('amount of movement = {}'.format(amountOfMovement))
-        if amountOfMovement < self.movement_thresh:
-            return
-        print('resampling, with max prob = {}'.format(self.weights.max())) #normalizing the weights
-
-        #resampling
-        sampledParticlesIndices = np.random.choice(range(self.N), size=self.N, p=self.weights)
-        self.currPoses = self.currPoses[sampledParticlesIndices]
-        self.weights = self.weights[sampledParticlesIndices]
-        self.gmaps = self.gmaps[sampledParticlesIndices]
-
-        self.lastOdomLocalization = self.currOdom
-        
-    def resample_improved(self):
-        #if the robot is not moving, we do not resample
-        if not self.movement:
-            return
-        print('resampling, with max prob = {}'.format(self.weights.max())) #normalizing the weights
-
-        #resampling
-        sampledParticlesIndices = np.random.choice(range(self.N), size=self.N, p=self.weights)
-        self.currPoses = self.currPoses[sampledParticlesIndices]
-        self.weights = self.weights[sampledParticlesIndices]
-        self.gmaps = self.gmaps[sampledParticlesIndices]
-
-
-    def resample_improvedV2(self):
-        #if the robot is not moving, we do not resample
-        if self.must_resample or self.movement:
-            max_weight = self.weights.max()
-            print('resmapling before the if with max = {}'.format(max_weight))
-            if max_weight > 1E-30:
-                print('resampling, with max prob = {}'.format(max_weight)) #normalizing the weights
-                #resampling
-                self.must_resample = False
-                self.weights = self.weights/self.weights.sum()
-                sampledParticlesIndices = np.random.choice(range(self.N), size=self.N, p=self.weights)
-                self.currPoses = self.currPoses[sampledParticlesIndices]
-                self.weights = self.weights[sampledParticlesIndices]
-                self.gmaps = self.gmaps[sampledParticlesIndices]
-
+    def calcProbabilities(self, Ztk, Zstar):
+        #calc_Phit and calc_Prand
+        if Ztk < self.Zmin or Ztk > self.Zmax:
+            Phit = 0
+            Prand = 0
+        else:
+            Phit = (1/sqrt(2*pi*self.Phit_segma**2)) * exp(-0.5*(Ztk-Zstar)**2/(self.Phit_segma**2))
+            Prand = 1.0/(self.Zmax-self.Zmin)
+        #calc_Pmax
+        Pmax = int(Ztk == self.Zmax)
+        #calc_Pshort
+        if Ztk < self.Zmin or Ztk > Zstar:
+            Pshort = 0
+        else:
+            n = 1/(1-exp(-self.lambda_short * Zstar))
+            Pshort = n * self.lambda_short * exp(-self.lambda_short*Ztk)
+        probs = np.array([Phit, Pshort, Pmax, Prand], dtype=np.float64) 
+        #print('{} -> {} => {}'.format(Ztk, Ztk-Zstar, probs))
+        return probs
 
     def measurement_model(self, xt, imageMap):
         i, j = self.gmaps[0].metersToPixelsIndex(xt)
@@ -387,6 +344,22 @@ class Robot:
             P_Ztk = P_Ztk * p    
         return P_Ztk
 
+    def measurement_model_enhanced(self, xt, imageMap, Zt):
+        i, j = self.gmaps[0].metersToPixelsIndex(xt)
+        Zt_star = ray_cast(i, j, imageMap, self.K_scanAngles + xt[2], self.Zmin, self.Zmax, debug=True)
+        probs = []
+        for i, k in enumerate(self.K_scanAngles_indices):
+            if Zt[k] == self.Zmax or Zt_star[i] == self.Zmax:
+                continue
+            ps_values = self.calcProbabilities(Zt[k], Zt_star[i])
+            ps_values = ps_values*2
+            p = np.dot(self.prob_weights, ps_values)
+            probs.append(p)    
+        probs = np.array(probs)
+        probs = np.sort(probs)[-self.scanAccpted:]
+        P_Ztk = np.prod(probs)
+        return P_Ztk
+
     def sample_particles(self):
         for k in range(self.N):
             xt = self.currPoses[k]
@@ -396,9 +369,6 @@ class Robot:
                 self.update_map_count = 0
                 i, j = self.gmaps[0].metersToPixelsIndex(xt)
                 self.gmaps[k].map = update_occupancy_grid_optimized(i, j, self.gmaps[k].map, self.scanAgles + xt[2], self.Zt)
-
-        self.weights = self.weights/self.weights.sum()
-        #print(self.weights)
 
     def sample_particles_multiprocess(self, zt):
         xt_list = []
@@ -410,46 +380,6 @@ class Robot:
             Zt_list.append(zt)
         weights_list = ProcessingPool().map(self.measurement_model_with_update_occupency_grid, xt_list, imageMap_list, Zt_list)
         return weights_list
-
-
-    def plotCurrPoses(self, image):
-        image[:, :, 1] = 0
-        image[:, :, 2] = 0
-        # r = np.linspace(0, 1, 10)
-        # self.plotPose(self.worldPose, image, channel=1)
-        for pose in self.currPoses:
-            self.plotPose(pose, image)
-            # x = pose[0] + r*np.cos(pose[2])
-            # y = pose[1] + r*np.sin(pose[2])
-            # for k in range(x.shape[0]):
-            #     i, j = self.gmaps[0].metersToPixelsIndex([x[k], y[k]])
-            #     image[i, j, 2] = 255         
-    def plotPose(self, pose, image, channel=2):
-        i, j = self.gmaps[0].metersToPixelsIndex(pose)
-        image[i-1:i+1, j-1:j+1, channel] = 255
-
-    def measurement_model_enhanced(self, xt, imageMap, Zt):
-        i, j = self.gmaps[0].metersToPixelsIndex(xt)
-        Zt_star = ray_cast(i, j, imageMap, self.K_scanAngles + xt[2], self.Zmin, self.Zmax, debug=True)
-        probs = []
-        # dZs = []
-        # Zs = []
-        for i, k in enumerate(self.K_scanAngles_indices):
-            if Zt[k] == self.Zmax or Zt_star[i] == self.Zmax:
-                continue
-            ps_values = self.calcProbabilities(Zt[k], Zt_star[i])
-            ps_values = ps_values*2
-            p = np.dot(self.prob_weights, ps_values)
-            probs.append(p)
-            # Zs.append(Zt[k])
-            # dZs.append(Zt[k]-Zt_star[i])
-        
-        probs = np.array(probs)
-        # print(np.array(dZs))
-        # print(np.array(Zs))
-        probs = np.sort(probs)[-self.scanAccpted:]
-        P_Ztk = np.prod(probs)
-        return P_Ztk
 
     def measurement_model_with_update_occupency_grid(self, xt, imageMap, Zt):
         i, j = self.gmaps[0].metersToPixelsIndex(xt)
@@ -471,44 +401,31 @@ class Robot:
         image = update_occupancy_grid_optimized(i, j, imageMap, self.scanAgles + xt[2], Zt)
 
         return P_Ztk, image
-    
-    def plotZt_hat(self, image, pose, low_probs_indices, Zt_hat):
-        rmax = 8
-        #plotting Zt
-        for index in self.K_scanAngles_indices[low_probs_indices]:
-            angle = self.scanAgles[index] + pose[2]
-            if self.Zt[index] == float('inf'):
-                continue
-            x = pose[0] + self.Zt[index] *np.cos(angle)
-            y = pose[1] + self.Zt[index] *np.sin(angle)
-            i, j = self.gmaps[0].metersToPixelsIndex([x, y])
-            if(i>210 or j>210):
-                continue
-            image[i-1:i+1, j-1:j+1, 1] = 255
-            for r in np.linspace(0, rmax, 100):
-                x = pose[0] + r *np.cos(angle)
-                y = pose[1] + r *np.sin(angle)
-                i, j = self.gmaps[0].metersToPixelsIndex([x, y])
-                if(i>210 or j>210):
-                    continue
-                image[i, j, 1] = 255 
 
-        #plotting Zt_hat
-        for index in low_probs_indices:
-            angle = self.K_scanAngles[index] + pose[2]
-            # print(index, Zt_hat[index])
-            x = pose[0] + Zt_hat[index] *np.cos(angle)
-            y = pose[1] + Zt_hat[index] *np.sin(angle)
-            i, j = self.gmaps[0].metersToPixelsIndex([x, y])
-            image[i-1:i+1, j-1:j+1, 2] = 255
-            for r in np.linspace(0, rmax, 100):
-                x = pose[0] + r *np.cos(angle)
-                y = pose[1] + r *np.sin(angle)
-                i, j = self.gmaps[0].metersToPixelsIndex([x, y])
-                if(i>210 or j>210):
-                    continue
-                image[i, j, 2] = 255            
+    def resample(self):
+        if self.prev_movement == True and self.movement == False:
+            self.must_resample = True
+            print('robot.must_resample equals True')
+            self.perform_resampling()
+        self.prev_movement = robot.movement
 
+        self.resampleCounter += 1
+        if self.resampleCounter > 30 and self.movement == True:
+            robot.perform_resampling()
+
+    def perform_resampling(self):        
+        max_weight = self.weights.max()
+        print('resmapling before the if with max = {}'.format(max_weight))
+        if max_weight > 1E-30:
+            print('resampling, with max prob = {}'.format(max_weight)) #normalizing the weights
+            #resampling
+            self.must_resample = False
+            self.resampleCounter = 0
+            self.weights = self.weights/self.weights.sum()
+            sampledParticlesIndices = np.random.choice(range(self.N), size=self.N, p=self.weights)
+            self.currPoses = self.currPoses[sampledParticlesIndices]
+            self.weights = self.weights[sampledParticlesIndices]
+            self.gmaps = self.gmaps[sampledParticlesIndices]
 
 
 def main():
@@ -532,7 +449,7 @@ def main():
     # kernel = np.array([[1, 1, 1], [1, 1, 1], [1, 1, 1] ], dtype=np.uint8)
     # kernel = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0] ], dtype=np.uint8)
     # img = cv2.dilate(img, kernel, iterations=4)
-    resampleCounter = 0
+    
     while not rospy.is_shutdown():
         # r.sleep()
         # image[:, :, 1] = 0
@@ -550,28 +467,16 @@ def main():
 
 
         start = time.time()
-        #testing localization
         Zt = robot.Zt
         varialbe = robot.sample_particles_multiprocess(Zt)
-
         freq = 1/(time.time() - start)
         print(freq)
+
         for i, l in enumerate(varialbe):
            robot.weights[i], robot.gmaps[i].map = l
         print(robot.weights)
 
-        
-        resampleCounter += 1
-        if resampleCounter > 30 or robot.must_resample:
-            resampleCounter = 0
-            robot.resample_improvedV2()
-
-        if robot.prev_movement == True and robot.movement == False:
-            robot.must_resample = True
-            print('robot.must_resample equals True')
-        robot.prev_movement = robot.movement
-
-
+        robot.resample()
 
         for num, k in enumerate(robot.weights.argsort()[-numWindows:]):
             robot.plotZt(robot.gmaps[k].map, robot.currPoses[k])
