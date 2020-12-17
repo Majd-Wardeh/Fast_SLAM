@@ -56,7 +56,7 @@ def ray_cast(xco, yco, image, scanAngles, Zmin=1.0, Zmax=30.0, pixelToMeterRatio
         if new_set.size:
             intersection_index = np.argmax(new_set)
             # if intersection_index == 0:
-            #     print('the intersection_index is equal to zero!')
+                # print('the intersection_index is equal to zero!')
             px, py = xint[intersection_index], yint[intersection_index]
             if debug:
                 #image[xint[0:50], yint[0:50], 1] = 255
@@ -68,8 +68,8 @@ def ray_cast(xco, yco, image, scanAngles, Zmin=1.0, Zmax=30.0, pixelToMeterRatio
                     ranges[i] = Zmax
                     continue              
             ranges[i] = sqrt( (px - xc)**2 + (py - yc)**2  )*pixelToMeterRatio
-            if debug: #plot the intersection as a point
-                pass #image[px-1:px+1, py-1:py+1, 2] = 255
+            # if debug: #plot the intersection as a point
+            #     image[px-1:px+1, py-1:py+1, 2] = 255
         else: # the ray did not hit any obstical in the image 
             ranges[i] = Zmax
     if debug:
@@ -133,8 +133,9 @@ class GridMap:
 
 class Robot:
 #alphas=[0.008, 0.0008, 0.017, 0.01]
-    def __init__(self, N, scanNum=30, alphas=[0.009, 0.001, 0.017, 0.01], alpha=0.1, beta=0.0066, Phit_segma=1,\
-                                    lambda_short=0.3, prob_weights=[0.95, 0.01, 0.02, 0.02], movement_thresh=0.1):
+# alphas=[0.009, 0.001, 0.017, 0.01]
+    def __init__(self, N, scanNum=30, alphas=[0.012, 0.0012, 0.017, 0.01], alpha=0.1, beta=0.0066, Phit_segma=0.4,\
+                                    lambda_short=0.4, prob_weights=[0.95, 0.01, 0.02, 0.02], movement_thresh=0.1):
         self.N = N
         self.alphas = alphas
         self.firstOdometry = True
@@ -440,17 +441,23 @@ class Robot:
     def measurement_model_enhanced(self, xt, imageMap, Zt):
         i, j = self.gmaps[0].metersToPixelsIndex(xt)
         Zt_star = ray_cast(i, j, imageMap, self.K_scanAngles + xt[2], self.Zmin, self.Zmax, debug=True)
-        P_Ztk = 1
         probs = []
+        # dZs = []
+        # Zs = []
         for i, k in enumerate(self.K_scanAngles_indices):
-            # if Zt[k] == self.Zmax or Zt_star[i] == self.Zmax:
-            #     continue
+            if Zt[k] == self.Zmax or Zt_star[i] == self.Zmax:
+                continue
             ps_values = self.calcProbabilities(Zt[k], Zt_star[i])
             ps_values = ps_values*2
             p = np.dot(self.prob_weights, ps_values)
             probs.append(p)
-
-        probs = np.sort(np.array(probs))[-self.scanAccpted:]
+            # Zs.append(Zt[k])
+            # dZs.append(Zt[k]-Zt_star[i])
+        
+        probs = np.array(probs)
+        # print(np.array(dZs))
+        # print(np.array(Zs))
+        probs = np.sort(probs)[-self.scanAccpted:]
         P_Ztk = np.prod(probs)
         return P_Ztk
 
@@ -513,19 +520,18 @@ class Robot:
                 image[i, j, 2] = 255            
 
 
+
 def main():
     rospy.init_node('fast_slam', anonymous=True)
     robot = Robot(40)
     rospy.Subscriber('/gazebo/link_states', LinkStates, robot.linkStatesCallback)
     rospy.sleep(0.01)
-
     rospy.Subscriber('/husky_velocity_controller/odom', Odometry, robot.odometryCallback)
     rospy.Subscriber('/scan', LaserScan, robot.laserScanCallback)
-
     rospy.sleep(0.1)
 
-    #to aline opencv windows 
-    numWindows = 1
+    # to aline opencv windows 
+    numWindows = 4
     for i in range(numWindows):
         win_name = 'map[{}]'.format(i)
         cv2.namedWindow(win_name)
@@ -537,29 +543,34 @@ def main():
     # kernel = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0] ], dtype=np.uint8)
     # img = cv2.dilate(img, kernel, iterations=4)
     resampleCounter = 0
-    # r = rospy.Rate(30)
+    r = rospy.Rate(1.5)
     plotCounter = 0
     while not rospy.is_shutdown():
+        # r.sleep()
+        # image[:, :, 1] = 0
+        # image[:, :, 2] = 0
+        # Zt = robot.Zt
+        # wpose = robot.worldPose
+        # weight = robot.measurement_model_enhanced(wpose, image, Zt)
+        # i, j = robot.gmaps[0].metersToPixelsIndex(wpose)
+        # image = update_occupancy_grid_optimized(i, j, image, robot.scanAgles + wpose[2], Zt)
+        # print(weight)
+        # robot.plotCurrPoses(image)
+        # # robot.plotZt_hat(image, wpose, low_probs_indices, Zt_hat)
+        # robot.plotZt(image, wpose)
+        # cv2.imshow('image', image)
+
 
         start = time.time()
         #testing localization
         Zt = robot.Zt
-        # robot.weights, images 
         varialbe = robot.sample_particles_multiprocess(Zt)
-        # tmp_weights = np.zeros((robot.N, ))
-        # for k in range(robot.N):
-        #     xt = robot.currPoses[k]
-        #     tmp_weights[k] = robot.measurement_model_enhanced(xt, robot.gmaps[k].map, Zt)
-        # for k in range(robot.N): 
-        #     xt = robot.currPoses[k]  
-            # i, j = robot.gmaps[0].metersToPixelsIndex(xt)
-            # robot.gmaps[k].map = update_occupancy_grid_optimized(i, j, robot.gmaps[k].map, robot.scanAgles + robot.worldPose[2], Zt)
 
         freq = 1/(time.time() - start)
-        # print(freq)
+        print(freq)
         for i, l in enumerate(varialbe):
            robot.weights[i], robot.gmaps[i].map = l
-        # print(robot.weights)
+        print(robot.weights)
 
         
         resampleCounter += 1
@@ -572,14 +583,7 @@ def main():
             print('robot.must_resample equals True')
         robot.prev_movement = robot.movement
 
-        # robot.plotCurrPoses(image)
-        # # robot.plotZt_hat(image, wpose, low_probs_indices, Zt_hat)
-        # robot.plotZt(image, wpose)
-        # cv2.imshow('image', image)
 
-        # plotCounter += 1
-        # if plotCounter > 5:
-        #     plotCounter = 0
 
         for num, k in enumerate(robot.weights.argsort()[-numWindows:]):
             robot.plotZt(robot.gmaps[k].map, robot.currPoses[k])
@@ -591,7 +595,7 @@ def main():
         elif key == ord('f'):
             cv2.imwrite('map_optimized.jpg', image[:, :, 0])
 
-        # r.sleep()
+        
 
 if __name__ == '__main__':
     try:
