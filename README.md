@@ -16,7 +16,7 @@ catkin init
 catkin config --extend /opt/ros/$ROS_VERSION
 catkin config --merge-devel
 cd src
-git clone 
+git clone https://github.com/Majd-Wardeh/Fast_SLAM.git
 
 # create virtual envirnment called fast_slam_ven
 cd ~
